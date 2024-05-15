@@ -299,7 +299,7 @@ int main(int argc, char *argv[]) {
     }   
 
     /* Split matrix into k parts */
-    int k = 16, ctr = 0;
+    int k = 1, ctr = 0;
     long int total = 0;
     int blocks_per_part = (A_num_rows/A_ell_blocksize) / k;
     if ((A_num_rows/A_ell_blocksize) % k != 0)
