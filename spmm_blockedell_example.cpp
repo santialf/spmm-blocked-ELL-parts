@@ -299,7 +299,7 @@ int main(int argc, char *argv[]) {
     }   
 
     /* Split matrix into k parts */
-    int k = 1, ctr = 0;
+    int k = 16, ctr = 0;
     long int total = 0;
     int blocks_per_part = (A_num_rows/A_ell_blocksize) / k;
     if ((A_num_rows/A_ell_blocksize) % k != 0)
@@ -337,7 +337,7 @@ int main(int argc, char *argv[]) {
     CHECK_CUSPARSE( cusparseCreateDnMat(&matB, A_num_cols, B_num_cols, ldb, dB,
 					CUDA_R_16F, CUSPARSE_ORDER_COL) )
 
-    
+    int total_blocks = 0;
     /* Create blocked ELL for each partition of matrix A */
     for (int i=0; i<k; i++){
 
@@ -405,16 +405,50 @@ int main(int argc, char *argv[]) {
                     &alpha, matA[i], matB, &beta, matC[i], CUDA_R_32F,
                     CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
         cudaDeviceSynchronize();
-printf("%d\n", A_rows);
+
+        //std::cout << A_num_blocks << std::endl;
+        total_blocks += A_num_blocks;
+        std::cout << total_blocks << std::endl;
+    }
+std::cout << "Total blocks: " <<total_blocks << std::endl;
+    struct timespec t_start, t_end;
+    double elapsedTime, searchTime = 0;
+    int numRuns=0;
+    //clock_gettime(CLOCK_MONOTONIC, &t_start);       // initial timestamp
+
+    for (int i=0; i<k; i++) {
+
+	CHECK_CUSPARSE( cusparseSpMM(handle,
+				    CUSPARSE_OPERATION_NON_TRANSPOSE,
+				    CUSPARSE_OPERATION_NON_TRANSPOSE,
+				    &alpha, matA[i], matB, &beta, matC[i], CUDA_R_32F,
+				    CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
+	cudaDeviceSynchronize();
+
+        // execute SpMM
+        clock_gettime(CLOCK_MONOTONIC, &t_start);       // initial timestamp
+        while (1) {
+            CHECK_CUSPARSE( cusparseSpMM(handle,
+                                        CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                        CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                        &alpha, matA[i], matB, &beta, matC[i], CUDA_R_32F,
+                                        CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
+            cudaDeviceSynchronize();
+            numRuns++;
+
+            clock_gettime(CLOCK_MONOTONIC, &t_end);         // final timestamp
+            elapsedTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000)));
+            if(elapsedTime > 5.0f) {
+                break;
+            }
+        }
+        clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
+        searchTime += ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
+        numRuns = 0;
     }
 
-    struct timespec t_start, t_end;
-    clock_gettime(CLOCK_MONOTONIC, &t_start);       // initial timestamp
-    double elapsedTime;
-    int numRuns=0;
-
-    while (1) {
-        // execute SpMM
+    /*while (1) {
+        
         for (int i=0; i<k; i++) {
             CHECK_CUSPARSE( cusparseSpMM(handle,
                                         CUSPARSE_OPERATION_NON_TRANSPOSE,
@@ -433,10 +467,10 @@ printf("%d\n", A_rows);
         if(elapsedTime > 5.0f) {
             break;
         }        
-    }
+    }*/
 
-    clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
-    double searchTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
+    /*clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
+    double searchTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;*/
     
     std::cout << argv[1];
     printf(" Time (seconds):\t%.6f\n", searchTime);
@@ -457,13 +491,13 @@ printf("%d\n", A_rows);
                         	cudaMemcpyDeviceToHost) )
     }
 
-    std::ofstream outputFile("output.txt");
+    /*std::ofstream outputFile("output.txt");
 	
     for(int i=0; i<k; i++) {
 	for (int j = 0; j< 256*B_num_cols; j++)
 	    outputFile << hC[i][j] << std::endl;
     }
-    outputFile.close();
+    outputFile.close();*/
         
     //--------------------------------------------------------------------------
     // device memory deallocation
