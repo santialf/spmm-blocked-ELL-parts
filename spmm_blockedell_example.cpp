@@ -341,7 +341,6 @@ int main(int argc, char *argv[]) {
     /* Create blocked ELL for each partition of matrix A */
     for (int i=0; i<k; i++){
 
-       
         int *rowPtr_part = new int[blocks_per_part*A_ell_blocksize + 1];
         int A_rows = 0;
         for (int j=ctr; j<ctr+blocks_per_part*A_ell_blocksize; j++){
@@ -352,6 +351,7 @@ int main(int argc, char *argv[]) {
         }    
         ctr += A_rows;
         rowPtr_part[A_rows] = rowPtr_pad[ctr];
+        long int nnzs_part = rowPtr_part[A_rows] - rowPtr_part[0];
 
         // Create blocked ELL vectors for partition
         int   A_ell_cols      = findMaxNnz(rowPtr_part, colIndex, A_rows, A_ell_blocksize);
@@ -360,7 +360,7 @@ int main(int argc, char *argv[]) {
         int   *hA_columns     = createBlockIndex(rowPtr_part, colIndex, A_rows, A_ell_blocksize, A_ell_cols);
         __half *hA_values     = createValueIndex(rowPtr_part, colIndex, values, hA_columns, A_rows, A_ell_blocksize, A_ell_cols);
 
-	__half *hC 	      = new __half[(long int) A_rows * B_num_cols * sizeof(__half)];
+	    __half *hC 	      = new __half[(long int) A_rows * B_num_cols * sizeof(__half)];
 
         // Allocate and copy memory in GPU for blocked ELL vectors
         CHECK_CUDA( cudaMalloc((void**) &dA_columns[i], (long int) A_num_blocks * sizeof(int)) )
@@ -399,31 +399,23 @@ int main(int argc, char *argv[]) {
                                     CUSPARSE_SPMM_ALG_DEFAULT, &bufferSize) )
         CHECK_CUDA( cudaMalloc(&dBuffer, bufferSize) )
 
-        CHECK_CUSPARSE( cusparseSpMM(handle,
-                        CUSPARSE_OPERATION_NON_TRANSPOSE,
-                    CUSPARSE_OPERATION_NON_TRANSPOSE,
-                    &alpha, matA[i], matB, &beta, matC[i], CUDA_R_32F,
-                    CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
-        cudaDeviceSynchronize();
-
         //std::cout << A_num_blocks << std::endl;
         total_blocks += A_num_blocks;
-        std::cout << total_blocks << std::endl;
+        double density_part = (double) nnzs_part/A_num_blocks;
+        std::cout << total_blocks << " density: " << density_part <<std::endl;
     }
 std::cout << "Total blocks: " <<total_blocks << std::endl;
     struct timespec t_start, t_end;
     double elapsedTime, searchTime = 0;
     int numRuns=0;
-    //clock_gettime(CLOCK_MONOTONIC, &t_start);       // initial timestamp
 
     for (int i=0; i<k; i++) {
-
-	CHECK_CUSPARSE( cusparseSpMM(handle,
-				    CUSPARSE_OPERATION_NON_TRANSPOSE,
-				    CUSPARSE_OPERATION_NON_TRANSPOSE,
-				    &alpha, matA[i], matB, &beta, matC[i], CUDA_R_32F,
-				    CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
-	cudaDeviceSynchronize();
+        CHECK_CUSPARSE( cusparseSpMM(handle,
+                        CUSPARSE_OPERATION_NON_TRANSPOSE,
+                        CUSPARSE_OPERATION_NON_TRANSPOSE,
+                        &alpha, matA[i], matB, &beta, matC[i], CUDA_R_32F,
+                        CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
+        cudaDeviceSynchronize();
 
         // execute SpMM
         clock_gettime(CLOCK_MONOTONIC, &t_start);       // initial timestamp
@@ -442,6 +434,9 @@ std::cout << "Total blocks: " <<total_blocks << std::endl;
                 break;
             }
         }
+	clock_gettime(CLOCK_MONOTONIC, &t_end);
+//double aux = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
+//std::cout << k << " time: " << aux << std::endl;
         clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
         searchTime += ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
         numRuns = 0;
