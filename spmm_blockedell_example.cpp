@@ -299,7 +299,8 @@ int main(int argc, char *argv[]) {
     }   
 
     /* Split matrix into k parts */
-    int k = 16, ctr = 0;
+    int k = 1, ctr = 0;
+    int*blocksPerPart = new int[k];
     long int total = 0;
     int blocks_per_part = (A_num_rows/A_ell_blocksize) / k;
     if ((A_num_rows/A_ell_blocksize) % k != 0)
@@ -319,7 +320,7 @@ int main(int argc, char *argv[]) {
     float beta            = 0.0f;
 
     int   B_num_rows      = A_num_cols;
-    int   B_num_cols      = 32;
+    int   B_num_cols      = 64;
     int   ldb             = B_num_rows;
     int   ldc             = A_num_rows;
     long int   B_size          = (long int) ldb * B_num_cols;
@@ -399,10 +400,10 @@ int main(int argc, char *argv[]) {
                                     CUSPARSE_SPMM_ALG_DEFAULT, &bufferSize) )
         CHECK_CUDA( cudaMalloc(&dBuffer, bufferSize) )
 
-        //std::cout << A_num_blocks << std::endl;
         total_blocks += A_num_blocks;
+        blocksPerPart[i] = A_num_blocks;
         double density_part = (double) nnzs_part/A_num_blocks;
-        std::cout << total_blocks << " density: " << density_part <<std::endl;
+        //std::cout << total_blocks << " density: " << density_part <<std::endl;
     }
 std::cout << "Total blocks: " <<total_blocks << std::endl;
     struct timespec t_start, t_end;
@@ -434,11 +435,11 @@ std::cout << "Total blocks: " <<total_blocks << std::endl;
                 break;
             }
         }
-	clock_gettime(CLOCK_MONOTONIC, &t_end);
-//double aux = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
-//std::cout << k << " time: " << aux << std::endl;
-        clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
+        
         searchTime += ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
+        double time_part = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
+        double perf_part = (2* ((double)blocksPerPart[i]) * ((double)A_ell_blocksize*A_ell_blocksize) * ((double)B_num_cols) / 1000000000000) / time_part;
+        std::cout << i << "\tNumber Blocks: " << blocksPerPart[i] << "\tPerf: " << perf_part << std::endl;
         numRuns = 0;
     }
 
@@ -466,9 +467,9 @@ std::cout << "Total blocks: " <<total_blocks << std::endl;
 
     /*clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
     double searchTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;*/
-    
+    double tflops_bell = (2* ((double)total_blocks) * ((double)A_ell_blocksize*A_ell_blocksize) * ((double)B_num_cols) / 1000000000000) / searchTime;
     std::cout << argv[1];
-    printf(" Time (seconds):\t%.6f\n", searchTime);
+    printf(" Time (seconds):\t%.6f\t%.6f\n", searchTime, tflops_bell);
 
     // destroy matrix/vector descriptors
     for (int i=0; i<k; i++) {
